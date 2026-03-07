@@ -1,26 +1,33 @@
-from flask import Flask, jsonify, render_template, request
-from scanner import scan_btts
 import os
+from flask import Flask, jsonify, render_template, request
+from scanner import scan_btts_auto
 
 app = Flask(__name__)
+
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/health')
-def health():
+
+@app.route('/healthz')
+def healthz():
     return {'ok': True}
 
-@app.route('/api/scan')
-def api_scan():
-    leagues_raw = request.args.get('leagues', '').strip()
-    leagues = [x.strip() for x in leagues_raw.split(',') if x.strip()] if leagues_raw else None
+
+@app.route('/scan')
+def scan():
     try:
-        payload = scan_btts(leagues=leagues)
-        return jsonify(payload)
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        data = scan_btts_auto(
+            edge_threshold=float(os.getenv('EDGE_THRESHOLD', '0.03')),
+            bankroll=float(os.getenv('BANKROLL', '1000')),
+            kelly_fraction=float(os.getenv('KELLY_FRACTION', '0.25')),
+            max_events_per_sport=int(os.getenv('MAX_EVENTS_PER_SPORT', '8')),
+        )
+        return jsonify(data)
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '5001'))
