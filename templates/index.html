@@ -1,9 +1,120 @@
-card.innerHTML = `
-  <div><strong>${item.match ?? "Unknown match"}</strong></div>
-  <div>Kalshi Price: ${item.kalshi_price ?? "-"}</div>
-  <div>True Prob: ${item.true_prob ?? "-"}</div>
-  <div>Edge: ${item.edge ?? "-"}</div>
-  <div>Signal: ${item.signal ?? "-"}</div>
-  <div>Books: ${item.books ?? ""}</div>
-  <div>Notes: ${item.notes ?? ""}</div>
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTTS Edge Radar</title>
+
+<style>
+body{
+font-family:system-ui,-apple-system,sans-serif;
+background:#07133a;
+color:white;
+padding:20px;
+margin:0;
+}
+
+h1{
+margin-top:40px;
+font-size:32px;
+}
+
+button{
+background:#2f6df6;
+color:white;
+border:none;
+border-radius:14px;
+padding:18px 24px;
+font-size:18px;
+margin:20px 0;
+}
+
+.card{
+background:#11204f;
+border-radius:14px;
+padding:16px;
+margin-bottom:12px;
+}
+
+.bet{background:#0f5132;}
+.pass{background:#3a1d1d;}
+.review{background:#4b3a12;}
+.nodata{background:#4a1f1f;}
+</style>
+
+</head>
+
+<body>
+
+<h1>BTTS Edge Radar</h1>
+
+<button onclick="scan()">Refresh Scan</button>
+
+<div id="status">Tap refresh to scan.</div>
+<div id="results"></div>
+
+<script>
+
+async function scan(){
+
+const status=document.getElementById("status");
+const results=document.getElementById("results");
+
+status.textContent="Scanning...";
+results.innerHTML="";
+
+try{
+
+const res=await fetch("/scan");
+
+if(!res.ok){
+status.textContent="Error "+res.status;
+return;
+}
+
+const data=await res.json();
+
+if(data.length===0){
+status.textContent="Scan worked but no matches returned.";
+return;
+}
+
+status.textContent="Found "+data.length+" results.";
+
+data.forEach(item=>{
+
+const card=document.createElement("div");
+
+let cls="card pass";
+
+if(item.signal==="BET")cls="card bet";
+if(item.signal==="REVIEW")cls="card review";
+if(item.signal==="NO DATA")cls="card nodata";
+
+card.className=cls;
+
+card.innerHTML=`
+<div><strong>${item.match ?? "Unknown match"}</strong></div>
+<div>Kalshi Price: ${item.kalshi_price ?? "-"}</div>
+<div>True Prob: ${item.true_prob ?? "-"}</div>
+<div>Edge: ${item.edge ?? "-"}</div>
+<div>Signal: ${item.signal ?? "-"}</div>
+<div>Books: ${item.books ?? ""}</div>
+<div>Notes: ${item.notes ?? ""}</div>
 `;
+
+results.appendChild(card);
+
+});
+
+}
+
+catch(err){
+status.textContent="Network error "+err;
+}
+
+}
+
+</script>
+
+</body>
+</html>
