@@ -6,7 +6,6 @@ from difflib import SequenceMatcher
 ODDS_KEY = os.getenv("ODDS_API_KEY")
 
 KALSHI_EVENTS_URL = "https://api.kalshi.com/trade-api/v2/events"
-ODDS_SPORTS = [
     "soccer_epl",
     "soccer_spain_la_liga",
     "soccer_italy_serie_a",
