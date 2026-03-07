@@ -1,20 +1,82 @@
-BTTS Edge Radar
-● idle
-Phone-first dashboard for Kalshi vs sportsbook BTTS edges. Refresh, scan, tap, vibe check, repeat.
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BTTS Edge Radar</title>
 
-Refresh scan
-Waiting for first scan.
+<style>
+body{
+font-family:system-ui;
+background:#0f172a;
+color:white;
+padding:20px;
+}
 
-Matches
+.card{
+background:#1e293b;
+padding:16px;
+margin-bottom:12px;
+border-radius:10px;
+}
 
-Match
-Side
-Kalshi
-True
-Edge
-Signal
-Stake
-Books
-Notes
+.bet{
+background:#064e3b;
+}
 
-Mobile friendly by default. Deploy once, then use it like a normal site on your phone.
+button{
+padding:12px;
+border:none;
+border-radius:8px;
+background:#2563eb;
+color:white;
+font-size:16px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>BTTS Edge Radar</h2>
+
+<button onclick="scan()">Refresh Scan</button>
+
+<div id="results"></div>
+
+<script>
+
+async function scan(){
+
+let res = await fetch("/scan")
+let data = await res.json()
+
+let container = document.getElementById("results")
+container.innerHTML=""
+
+data.forEach(m=>{
+
+let card=document.createElement("div")
+
+card.className="card"
+
+if(m.signal=="BET"){
+card.className="card bet"
+}
+
+card.innerHTML=`
+<b>${m.match}</b><br>
+Kalshi: ${m.kalshi_price}<br>
+True Prob: ${m.true_prob}%<br>
+Edge: ${m.edge}%<br>
+Signal: ${m.signal}
+`
+
+container.appendChild(card)
+
+})
+
+}
+
+</script>
+
+</body>
+</html>
