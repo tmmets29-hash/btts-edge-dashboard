@@ -1,82 +1,104 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BTTS Edge Radar</title>
-
-<style>
-body{
-font-family:system-ui;
-background:#0f172a;
-color:white;
-padding:20px;
-}
-
-.card{
-background:#1e293b;
-padding:16px;
-margin-bottom:12px;
-border-radius:10px;
-}
-
-.bet{
-background:#064e3b;
-}
-
-button{
-padding:12px;
-border:none;
-border-radius:8px;
-background:#2563eb;
-color:white;
-font-size:16px;
-}
-</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BTTS Edge Radar</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #07133a;
+      color: white;
+      padding: 20px;
+      margin: 0;
+    }
+    h1 {
+      margin-top: 40px;
+      font-size: 32px;
+    }
+    button {
+      background: #2f6df6;
+      color: white;
+      border: none;
+      border-radius: 14px;
+      padding: 18px 24px;
+      font-size: 18px;
+      margin: 20px 0;
+    }
+    #status {
+      margin: 10px 0 20px 0;
+      font-size: 16px;
+      opacity: 0.9;
+    }
+    .card {
+      background: #11204f;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .bet {
+      background: #0f5132;
+    }
+    .pass {
+      background: #3a1d1d;
+    }
+  </style>
 </head>
-
 <body>
+  <h1>BTTS Edge Radar</h1>
 
-<h2>BTTS Edge Radar</h2>
+  <button onclick="scan()">Refresh Scan</button>
 
-<button onclick="scan()">Refresh Scan</button>
+  <div id="status">Tap refresh to scan.</div>
+  <div id="results"></div>
 
-<div id="results"></div>
+  <script>
+    async function scan() {
+      const status = document.getElementById("status");
+      const results = document.getElementById("results");
 
-<script>
+      status.textContent = "Scanning...";
+      results.innerHTML = "";
 
-async function scan(){
+      try {
+        const res = await fetch("/scan");
+        if (!res.ok) {
+          status.textContent = "Error: /scan returned " + res.status;
+          return;
+        }
 
-let res = await fetch("/scan")
-let data = await res.json()
+        const data = await res.json();
 
-let container = document.getElementById("results")
-container.innerHTML=""
+        if (!Array.isArray(data)) {
+          status.textContent = "Error: /scan did not return a list.";
+          results.innerHTML = "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
+          return;
+        }
 
-data.forEach(m=>{
+        if (data.length === 0) {
+          status.textContent = "Scan worked, but no matches came back.";
+          return;
+        }
 
-let card=document.createElement("div")
+        status.textContent = "Found " + data.length + " results.";
 
-card.className="card"
+        data.forEach(item => {
+          const card = document.createElement("div");
+          card.className = "card " + ((item.signal || "").toUpperCase() === "BET" ? "bet" : "pass");
 
-if(m.signal=="BET"){
-card.className="card bet"
-}
+          card.innerHTML = `
+            <div><strong>${item.match ?? "Unknown match"}</strong></div>
+            <div>Kalshi Price: ${item.kalshi_price ?? "-"}</div>
+            <div>True Prob: ${item.true_prob ?? "-"}</div>
+            <div>Edge: ${item.edge ?? "-"}</div>
+            <div>Signal: ${item.signal ?? "-"}</div>
+          `;
 
-card.innerHTML=`
-<b>${m.match}</b><br>
-Kalshi: ${m.kalshi_price}<br>
-True Prob: ${m.true_prob}%<br>
-Edge: ${m.edge}%<br>
-Signal: ${m.signal}
-`
-
-container.appendChild(card)
-
-})
-
-}
-
-</script>
-
+          results.appendChild(card);
+        });
+      } catch (err) {
+        status.textContent = "JS / network error: " + err;
+      }
+    }
+  </script>
 </body>
 </html>
