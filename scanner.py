@@ -6,6 +6,8 @@ from difflib import SequenceMatcher
 ODDS_KEY = os.getenv("ODDS_API_KEY")
 
 KALSHI_EVENTS_URL = "https://api.kalshi.com/trade-api/v2/events"
+
+ODDS_SPORTS = [
     "soccer_epl",
     "soccer_spain_la_liga",
     "soccer_italy_serie_a",
@@ -27,9 +29,6 @@ def normalize_team(s: str) -> str:
     return s
 
 def split_kalshi_match(title: str):
-    # Examples:
-    # "Dortmund at FC Köln: Both Teams to Score"
-    # "Hamburg vs Leipzig: Both Teams to Score"
     t = title.replace(": Both Teams to Score", "").strip()
 
     if " at " in t:
@@ -63,8 +62,6 @@ def devig_two_way(yes_price, no_price):
     return fair_yes, fair_no
 
 def get_kalshi_btts_markets():
-    # Inference from Kalshi docs: requesting events with nested markets is the cleanest way
-    # to get event + market price fields in one response.
     params = {
         "with_nested_markets": "true",
         "limit": 200
@@ -75,17 +72,21 @@ def get_kalshi_btts_markets():
     data = r.json()
 
     results = []
+
     for event in data.get("events", []):
         for market in event.get("markets", []):
             title = market.get("title", "") or ""
             subtitle = market.get("subtitle", "") or ""
+            event_title = event.get("title", "") or ""
 
-            title_blob = f"{event.get('title', '')} {title} {subtitle}".lower()
+            title_blob = f"{event_title} {title} {subtitle}".lower()
 
             if "both teams to score" not in title_blob and "btts" not in title_blob:
                 continue
 
-            home, away = split_kalshi_match(title or event.get("title", ""))
+            source_title = title if title else event_title
+            home, away = split_kalshi_match(source_title)
+
             if not home or not away:
                 continue
 
@@ -96,7 +97,7 @@ def get_kalshi_btts_markets():
                 continue
 
             results.append({
-                "kalshi_title": title or event.get("title", ""),
+                "kalshi_title": source_title,
                 "kalshi_ticker": market.get("ticker"),
                 "home_norm": home,
                 "away_norm": away,
@@ -114,13 +115,14 @@ def get_odds_events_for_sport(sport_key: str):
         "markets": "h2h",
         "oddsFormat": "decimal",
     }
+
     r = requests.get(url, params=params, timeout=30)
     if r.status_code != 200:
         return []
+
     return r.json()
 
 def get_btts_for_event(sport_key: str, event_id: str):
-    # Per Odds API docs, btts is an additional soccer market fetched event-by-event.
     url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/events/{event_id}/odds"
     params = {
         "apiKey": ODDS_KEY,
@@ -128,6 +130,7 @@ def get_btts_for_event(sport_key: str, event_id: str):
         "markets": "btts",
         "oddsFormat": "decimal",
     }
+
     r = requests.get(url, params=params, timeout=30)
     if r.status_code != 200:
         return None
@@ -149,6 +152,7 @@ def get_btts_for_event(sport_key: str, event_id: str):
             for outcome in market.get("outcomes", []):
                 name = str(outcome.get("name", "")).lower()
                 price = outcome.get("price")
+
                 if name == "yes":
                     yes_price = price
                 elif name == "no":
@@ -159,6 +163,7 @@ def get_btts_for_event(sport_key: str, event_id: str):
 
             if best_yes is None or float(yes_price) > float(best_yes):
                 best_yes = float(yes_price)
+
             if best_no is None or float(no_price) > float(best_no):
                 best_no = float(no_price)
 
@@ -172,6 +177,7 @@ def get_btts_for_event(sport_key: str, event_id: str):
         return None
 
     fair_yes, fair_no = fair
+
     return {
         "best_yes": best_yes,
         "best_no": best_no,
@@ -192,7 +198,19 @@ def scan_btts():
             "notes": ""
         }]
 
-    kalshi_markets = get_kalshi_btts_markets()
+    try:
+        kalshi_markets = get_kalshi_btts_markets()
+    except Exception as e:
+        return [{
+            "match": "Kalshi API error",
+            "kalshi_price": "-",
+            "true_prob": "-",
+            "edge": "-",
+            "signal": "ERROR",
+            "books": "",
+            "notes": str(e)
+        }]
+
     if not kalshi_markets:
         return [{
             "match": "No Kalshi BTTS markets found",
@@ -240,6 +258,7 @@ def scan_btts():
             continue
 
         event_btts = get_btts_for_event(best_sport, best_match["id"])
+
         if not event_btts:
             rows.append({
                 "match": km["kalshi_title"],
@@ -277,5 +296,9 @@ def scan_btts():
             "notes": f"score={best_score:.2f} ticker={km['kalshi_ticker']}"
         })
 
-    rows.sort(key=lambda x: (x["edge"] if isinstance(x["edge"], (int, float)) else -999), reverse=True)
+    def sort_key(x):
+        val = x.get("edge")
+        return val if isinstance(val, (int, float)) else -999
+
+    rows.sort(key=sort_key, reverse=True)
     return rows[:50]
