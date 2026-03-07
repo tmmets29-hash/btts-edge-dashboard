@@ -1,4 +1,3 @@
-import os
 from flask import Flask, jsonify, render_template, request
 from scanner import scan_btts_auto
 
