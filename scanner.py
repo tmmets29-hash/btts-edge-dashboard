@@ -47,7 +47,7 @@ def scan_btts():
         params = {
             "apiKey": ODDS_KEY,
             "regions": "us,uk,eu",
-            "markets": "btts"
+            "markets": "h2h"
         }
 
         try:
