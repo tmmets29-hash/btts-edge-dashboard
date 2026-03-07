@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: btts-edge-radar
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: ODDS_API_KEY
+        sync: false
+      - key: EDGE_THRESHOLD_PCT
+        value: 3
+      - key: BANKROLL
+        value: 1000
+      - key: KELLY_FRACTION
+        value: 0.25

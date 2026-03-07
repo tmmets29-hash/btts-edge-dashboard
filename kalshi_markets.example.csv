@@ -1,0 +1,4 @@
+match_name,sport_key,kalshi_ticker,preferred_side,enabled
+Arsenal vs Chelsea,soccer_epl,REPLACE_WITH_KALSHI_TICKER,AUTO,Y
+Liverpool vs Manchester City,soccer_epl,REPLACE_WITH_KALSHI_TICKER,AUTO,N
+Barcelona vs Real Madrid,soccer_spain_la_liga,REPLACE_WITH_KALSHI_TICKER,AUTO,N
