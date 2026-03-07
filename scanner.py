@@ -1,162 +1,235 @@
-import requests
 import os
+import requests
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 
 SPORT_KEY = "soccer_usa_mls"
-
 KALSHI_MARKETS_URL = "https://api.elections.kalshi.com/trade-api/v2/markets"
+
+
+def odds_to_prob(price):
+    try:
+        price = float(price)
+        if price <= 1:
+            return None
+        return 1 / price
+    except Exception:
+        return None
+
+
+def devig(prob_yes, prob_no):
+    total = prob_yes + prob_no
+    if total <= 0:
+        return None
+    return prob_yes / total
 
 
 def get_kalshi_btts_markets():
     try:
-        r = requests.get(KALSHI_MARKETS_URL)
-        markets = r.json()["markets"]
+        r = requests.get(KALSHI_MARKETS_URL, timeout=20)
+        r.raise_for_status()
+        data = r.json()
 
+        markets = data.get("markets", [])
         btts_markets = []
 
         for m in markets:
-            title = m.get("title", "").lower()
+            title = str(m.get("title", "")).lower()
+            subtitle = str(m.get("subtitle", "")).lower()
+            rulebook = str(m.get("rulebook", "")).lower()
 
-keywords = ["both teams", "btts", "both score"]
-
-if any(k in title for k in keywords):
-    btts_markets.append({
-        "match": m.get("title"),
-        "kalshi_price": m.get("yes_price"),
-        "ticker": m.get("ticker")
-    })
+            blob = f"{title} {subtitle} {rulebook}"
 
             keywords = ["both teams", "btts", "both score"]
 
-if any(k in title for k in keywords):
-                btts_markets.append({
-                    "match": m.get("title"),
-                    "kalshi_price": m.get("yes_price"),
-                    "ticker": m.get("ticker")
-                })
+            if "mls" not in blob:
+                continue
+
+            if not any(k in blob for k in keywords):
+                continue
+
+            yes_price = m.get("yes_price")
+            if yes_price is None:
+                yes_price = m.get("yes_ask")
+
+            btts_markets.append({
+                "match": m.get("title", ""),
+                "kalshi_price": yes_price,
+                "ticker": m.get("ticker", "")
+            })
 
         return btts_markets
 
     except Exception as e:
         return [{
             "match": "Kalshi API error",
+            "kalshi_price": "-",
+            "true_prob": "-",
+            "edge": "-",
             "signal": "ERROR",
+            "books": "",
             "notes": str(e)
         }]
 
 
-def get_mls_games():
+def get_mls_events():
+    try:
+        url = f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/events"
+        params = {"apiKey": ODDS_API_KEY}
 
-    url = f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/events"
+        r = requests.get(url, params=params, timeout=20)
+        r.raise_for_status()
+        return r.json()
 
-    params = {
-        "apiKey": ODDS_API_KEY
-    }
-
-    r = requests.get(url, params=params)
-    return r.json()
+    except Exception:
+        return []
 
 
 def get_btts_odds(event_id):
+    try:
+        url = f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/events/{event_id}/odds"
+        params = {
+            "apiKey": ODDS_API_KEY,
+            "markets": "btts",
+            "regions": "us,uk,eu",
+            "oddsFormat": "decimal"
+        }
 
-    url = f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/events/{event_id}/odds"
+        r = requests.get(url, params=params, timeout=20)
+        if r.status_code != 200:
+            return None
 
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "markets": "btts",
-        "regions": "us"
-    }
+        return r.json()
 
-    r = requests.get(url, params=params)
-    return r.json()
-
-
-def devig(prob_yes, prob_no):
-
-    total = prob_yes + prob_no
-
-    return prob_yes / total
-
-
-def odds_to_prob(price):
-
-    return 1 / price
+    except Exception:
+        return None
 
 
 def scan_btts():
-
-    results = []
+    if not ODDS_API_KEY:
+        return [{
+            "match": "Missing ODDS_API_KEY",
+            "kalshi_price": "-",
+            "true_prob": "-",
+            "edge": "-",
+            "signal": "CHECK ENV",
+            "books": "",
+            "notes": ""
+        }]
 
     kalshi_markets = get_kalshi_btts_markets()
 
     if not kalshi_markets:
         return [{
             "match": "No Kalshi BTTS markets found",
-            "signal": "NO DATA"
+            "kalshi_price": "-",
+            "true_prob": "-",
+            "edge": "-",
+            "signal": "NO DATA",
+            "books": "",
+            "notes": ""
         }]
 
-    events = get_mls_games()
+    if isinstance(kalshi_markets, list) and len(kalshi_markets) > 0:
+        first = kalshi_markets[0]
+        if first.get("signal") == "ERROR":
+            return kalshi_markets
+
+    events = get_mls_events()
+
+    if not events:
+        return [{
+            "match": "No MLS events found from Odds API",
+            "kalshi_price": "-",
+            "true_prob": "-",
+            "edge": "-",
+            "signal": "NO DATA",
+            "books": "",
+            "notes": ""
+        }]
+
+    results = []
 
     for event in events:
-
-        home = event["home_team"]
-        away = event["away_team"]
-
+        home = str(event.get("home_team", ""))
+        away = str(event.get("away_team", ""))
         event_name = f"{home} vs {away}"
 
-        odds_data = get_btts_odds(event["id"])
+        odds_data = get_btts_odds(event.get("id"))
+        if not odds_data:
+            continue
+
+        best_row = None
 
         for book in odds_data.get("bookmakers", []):
-
-            for market in book["markets"]:
-
-                if market["key"] != "btts":
+            for market in book.get("markets", []):
+                if market.get("key") != "btts":
                     continue
-
-                outcomes = market["outcomes"]
 
                 yes_price = None
                 no_price = None
 
-                for o in outcomes:
+                for outcome in market.get("outcomes", []):
+                    name = str(outcome.get("name", "")).lower()
+                    price = outcome.get("price")
 
-                    if o["name"].lower() == "yes":
-                        yes_price = o["price"]
+                    if name == "yes":
+                        yes_price = price
+                    elif name == "no":
+                        no_price = price
 
-                    if o["name"].lower() == "no":
-                        no_price = o["price"]
+                if yes_price is None or no_price is None:
+                    continue
 
-                if yes_price and no_price:
+                prob_yes = odds_to_prob(yes_price)
+                prob_no = odds_to_prob(no_price)
 
-                    prob_yes = odds_to_prob(yes_price)
-                    prob_no = odds_to_prob(no_price)
+                if prob_yes is None or prob_no is None:
+                    continue
 
-                    true_prob = devig(prob_yes, prob_no)
+                fair_yes = devig(prob_yes, prob_no)
+                if fair_yes is None:
+                    continue
 
-                    for km in kalshi_markets:
+                for km in kalshi_markets:
+                    km_match = str(km.get("match", "")).lower()
 
-                        if home.lower() in km["match"].lower() and away.lower() in km["match"].lower():
+                    if home.lower() in km_match and away.lower() in km_match:
+                        kp = km.get("kalshi_price")
 
-                            kalshi_price = km["kalshi_price"] / 100
+                        if kp is None:
+                            continue
 
-                            edge = true_prob - kalshi_price
+                        kalshi_price = float(kp) / 100.0
+                        edge = fair_yes - kalshi_price
+                        signal = "BET" if edge > 0.03 else "PASS"
 
-                            signal = "BET" if edge > 0.03 else "PASS"
+                        row = {
+                            "match": event_name,
+                            "kalshi_price": round(kalshi_price * 100, 1),
+                            "true_prob": round(fair_yes * 100, 1),
+                            "edge": round(edge * 100, 1),
+                            "signal": signal,
+                            "books": book.get("title", ""),
+                            "notes": km.get("ticker", "")
+                        }
 
-                            results.append({
-                                "match": event_name,
-                                "kalshi_price": round(kalshi_price, 3),
-                                "true_prob": round(true_prob, 3),
-                                "edge": round(edge, 3),
-                                "signal": signal,
-                                "books": book["title"]
-                            })
+                        if best_row is None or row["edge"] > best_row["edge"]:
+                            best_row = row
+
+        if best_row is not None:
+            results.append(best_row)
 
     if not results:
         return [{
             "match": "MLS games found but no Kalshi BTTS match",
-            "signal": "NO MATCH"
+            "kalshi_price": "-",
+            "true_prob": "-",
+            "edge": "-",
+            "signal": "NO MATCH",
+            "books": "",
+            "notes": ""
         }]
 
+    results.sort(key=lambda x: x["edge"], reverse=True)
     return results
