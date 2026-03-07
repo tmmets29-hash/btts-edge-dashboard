@@ -92,14 +92,31 @@ if(item.signal==="NO DATA")cls="card nodata";
 
 card.className=cls;
 
-card.innerHTML=`
-<div><strong>${item.match ?? "Unknown match"}</strong></div>
-<div>Kalshi Price: ${item.kalshi_price ?? "-"}</div>
-<div>True Prob: ${item.true_prob ?? "-"}</div>
-<div>Edge: ${item.edge ?? "-"}</div>
-<div>Signal: ${item.signal ?? "-"}</div>
-<div>Books: ${item.books ?? ""}</div>
-<div>Notes: ${item.notes ?? ""}</div>
+card.innerHTML = `
+  <div style="font-size:26px; font-weight:700; margin-bottom:10px;">
+    ${item.match ?? "Unknown match"}
+  </div>
+
+  <div style="font-size:22px; font-weight:600; margin-bottom:14px; color:#c7d7ff;">
+    Bet: ${item.market ?? "-"} ${item.side ?? ""}
+  </div>
+
+  <div style="font-size:18px; margin-bottom:8px;">
+    True Prob: <strong>${item.true_prob ?? "-"}</strong>${item.true_prob !== "-" ? "%" : ""}
+  </div>
+
+  <div style="font-size:18px; margin-bottom:8px;">
+    Book: ${item.books ?? "-"}
+  </div>
+
+  <div style="font-size:16px; opacity:0.9; margin-bottom:10px;">
+    ${item.notes ?? ""}
+  </div>
+
+  <div style="font-size:15px; opacity:0.75;">
+    Kalshi Price: ${item.kalshi_price ?? "-"} | Edge: ${item.edge ?? "-"} | Signal: ${item.signal ?? "-"}
+  </div>
+`;
 `;
 
 results.appendChild(card);
