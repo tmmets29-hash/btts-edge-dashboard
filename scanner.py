@@ -18,7 +18,9 @@ def get_kalshi_btts_markets():
         for m in markets:
             title = m.get("title", "").lower()
 
-            if "both teams to score" in title or "btts" in title:
+            keywords = ["both teams", "btts", "both score"]
+
+if any(k in title for k in keywords):
                 btts_markets.append({
                     "match": m.get("title"),
                     "kalshi_price": m.get("yes_price"),
