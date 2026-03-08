@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BTTS Edge Radar</title>
+  <title>Market Edge Radar</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -54,22 +54,22 @@
       box-shadow: 0 8px 24px rgba(0,0,0,0.25);
     }
 
+    .obvious {
+      background: #0d4027;
+      border: 2px solid #43e28d;
+    }
+
     .bet {
       background: #133d2a;
       border: 2px solid #2bd97f;
     }
 
-    .pass {
-      background: #3b1d22;
-      border: 2px solid #6b2a35;
-    }
-
-    .review {
+    .watch {
       background: #4b3a12;
       border: 2px solid #c9a227;
     }
 
-    .nodata {
+    .pass {
       background: #3b1d22;
       border: 2px solid #6b2a35;
     }
@@ -105,8 +105,8 @@
   </style>
 </head>
 <body>
-  <h1>BTTS Edge Radar</h1>
-  <div class="subtitle">Best MLS betting spots from sportsbook fair odds</div>
+  <h1>Market Edge Radar</h1>
+  <div class="subtitle">Best bet per match across leagues</div>
 
   <button id="scanButton">Refresh Scan</button>
 
@@ -142,26 +142,30 @@
           return;
         }
 
-        status.textContent = "Found " + data.length + " results.";
+        status.textContent = "Found " + data.length + " best bets.";
 
         data.forEach(item => {
           const card = document.createElement("div");
           const sig = (item.signal || "").toUpperCase();
 
           let cls = "card pass";
-          if (sig === "BET") cls = "card bet";
-          if (sig === "REVIEW") cls = "card review";
-          if (sig === "NO DATA" || sig === "NO BTTS" || sig === "ERROR" || sig === "CHECK ENV") cls = "card nodata";
+          if (sig === "OBVIOUS BET") cls = "card obvious";
+          else if (sig === "BET") cls = "card bet";
+          else if (sig === "WATCH") cls = "card watch";
+          else cls = "card pass";
 
           card.className = cls;
 
           card.innerHTML = `
             <div class="match">${item.match ?? "Unknown match"}</div>
             <div class="betline">Bet: ${item.market ?? "-"} ${item.side ?? ""}</div>
-            <div class="meta">True Prob: <strong>${item.true_prob ?? "-"}</strong>${item.true_prob !== "-" ? "%" : ""}</div>
-            <div class="meta">Book: ${item.books ?? "-"}</div>
-            <div class="notes">${item.notes ?? ""}</div>
-            <div class="footer">Kalshi Price: ${item.kalshi_price ?? "-"} | Edge: ${item.edge ?? "-"} | Signal: ${item.signal ?? "-"}</div>
+            <div class="meta">League: <strong>${item.league ?? "-"}</strong></div>
+            <div class="meta">Fair Prob: <strong>${item.true_prob ?? "-"}</strong>${item.true_prob !== "-" ? "%" : ""}</div>
+            <div class="meta">Best Book Prob: <strong>${item.book_prob ?? "-"}</strong>${item.book_prob !== "-" ? "%" : ""}</div>
+            <div class="meta">Edge: <strong>${item.edge ?? "-"}</strong>${item.edge !== "-" ? "%" : ""}</div>
+            <div class="meta">Signal: <strong>${item.signal ?? "-"}</strong></div>
+            <div class="notes">Books: ${item.books ?? ""}</div>
+            <div class="footer">${item.notes ?? ""}</div>
           `;
 
           results.appendChild(card);
