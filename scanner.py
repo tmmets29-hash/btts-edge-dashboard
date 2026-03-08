@@ -12,7 +12,16 @@ LEAGUES = [
     {"sport_key": "soccer_france_ligue_one", "label": "Ligue 1"},
 ]
 
-SHARP_BOOKS = ["Pinnacle", "bet365", "Bet365"]
+SHARP_BOOKS = {
+    "Pinnacle",
+    "Pinnacle Sports",
+    "Bet365",
+    "bet365",
+    "Betfair",
+    "DraftKings",
+    "FanDuel",
+    "Caesars"
+}
 
 
 def odds_to_prob(price):
@@ -21,16 +30,6 @@ def odds_to_prob(price):
         if price <= 1:
             return None
         return 1 / price
-    except Exception:
-        return None
-
-
-def prob_to_implied_price(prob):
-    try:
-        prob = float(prob)
-        if prob <= 0:
-            return None
-        return round(100 * prob, 1)
     except Exception:
         return None
 
@@ -77,129 +76,130 @@ def get_event_odds(sport_key, event_id):
         return None
 
 
-def choose_sharp_two_way(bookmakers, market_key, side_a_name, side_b_name, point=None):
-    sharp_rows = []
+def eligible_books(bookmakers, sharp_only=True):
+    if sharp_only:
+        books = [b for b in bookmakers if b.get("title") in SHARP_BOOKS]
+        if books:
+            return books
+    return bookmakers
 
-    for book in bookmakers:
-        if book.get("title") not in SHARP_BOOKS:
-            continue
 
-        for market in book.get("markets", []):
-            if market.get("key") != market_key:
-                continue
+def choose_two_way_fair(bookmakers, market_key, side_a_name, side_b_name, point=None):
+    for sharp_only in [True, False]:
+        rows = []
 
-            if point is not None:
-                market_point = market.get("point")
-                if market_point is None or float(market_point) != float(point):
+        for book in eligible_books(bookmakers, sharp_only=sharp_only):
+            for market in book.get("markets", []):
+                if market.get("key") != market_key:
                     continue
 
-            a_price = None
-            b_price = None
+                if point is not None:
+                    market_point = market.get("point")
+                    if market_point is None or float(market_point) != float(point):
+                        continue
 
-            for outcome in market.get("outcomes", []):
-                name = str(outcome.get("name", "")).lower()
-                price = outcome.get("price")
+                a_price = None
+                b_price = None
 
-                if name == side_a_name.lower():
-                    a_price = price
-                elif name == side_b_name.lower():
-                    b_price = price
+                for outcome in market.get("outcomes", []):
+                    name = str(outcome.get("name", "")).lower()
+                    price = outcome.get("price")
 
-            if a_price is None or b_price is None:
-                continue
+                    if name == side_a_name.lower():
+                        a_price = price
+                    elif name == side_b_name.lower():
+                        b_price = price
 
-            pa = odds_to_prob(a_price)
-            pb = odds_to_prob(b_price)
+                if a_price is None or b_price is None:
+                    continue
 
-            if pa is None or pb is None:
-                continue
+                pa = odds_to_prob(a_price)
+                pb = odds_to_prob(b_price)
 
-            fa, fb = devig_two_way(pa, pb)
-            if fa is None or fb is None:
-                continue
+                if pa is None or pb is None:
+                    continue
 
-            sharp_rows.append({
-                "book": book.get("title", ""),
-                "a_price": float(a_price),
-                "b_price": float(b_price),
-                "a_fair": fa,
-                "b_fair": fb
-            })
+                fa, fb = devig_two_way(pa, pb)
+                if fa is None or fb is None:
+                    continue
 
-    if not sharp_rows:
-        return None
+                rows.append({
+                    "book": book.get("title", ""),
+                    "a_fair": fa,
+                    "b_fair": fb
+                })
 
-    # prefer the sharpest consensus-ish row by averaging fair probs
-    avg_a = sum(r["a_fair"] for r in sharp_rows) / len(sharp_rows)
-    avg_b = sum(r["b_fair"] for r in sharp_rows) / len(sharp_rows)
+        if rows:
+            avg_a = sum(r["a_fair"] for r in rows) / len(rows)
+            avg_b = sum(r["b_fair"] for r in rows) / len(rows)
+            return {
+                "fair_a": avg_a,
+                "fair_b": avg_b,
+                "books": ", ".join(sorted(set(r["book"] for r in rows))),
+                "sharp_only": sharp_only
+            }
 
-    return {
-        "fair_a": avg_a,
-        "fair_b": avg_b,
-        "books": ", ".join(sorted(set(r["book"] for r in sharp_rows)))
-    }
+    return None
 
 
-def choose_sharp_three_way(bookmakers, home_team, away_team):
-    sharp_rows = []
+def choose_three_way_fair(bookmakers, home_team, away_team):
+    for sharp_only in [True, False]:
+        rows = []
 
-    for book in bookmakers:
-        if book.get("title") not in SHARP_BOOKS:
-            continue
+        for book in eligible_books(bookmakers, sharp_only=sharp_only):
+            for market in book.get("markets", []):
+                if market.get("key") != "h2h":
+                    continue
 
-        for market in book.get("markets", []):
-            if market.get("key") != "h2h":
-                continue
+                home_price = None
+                draw_price = None
+                away_price = None
 
-            home_price = None
-            draw_price = None
-            away_price = None
+                for outcome in market.get("outcomes", []):
+                    name = str(outcome.get("name", "")).strip()
+                    price = outcome.get("price")
 
-            for outcome in market.get("outcomes", []):
-                name = str(outcome.get("name", "")).strip()
-                price = outcome.get("price")
+                    if name == home_team:
+                        home_price = price
+                    elif name == away_team:
+                        away_price = price
+                    elif name.lower() == "draw":
+                        draw_price = price
 
-                if name == home_team:
-                    home_price = price
-                elif name == away_team:
-                    away_price = price
-                elif name.lower() == "draw":
-                    draw_price = price
+                if home_price is None or draw_price is None or away_price is None:
+                    continue
 
-            if home_price is None or draw_price is None or away_price is None:
-                continue
+                ph = odds_to_prob(home_price)
+                pd = odds_to_prob(draw_price)
+                pa = odds_to_prob(away_price)
 
-            ph = odds_to_prob(home_price)
-            pd = odds_to_prob(draw_price)
-            pa = odds_to_prob(away_price)
+                if ph is None or pd is None or pa is None:
+                    continue
 
-            if ph is None or pd is None or pa is None:
-                continue
+                fh, fd, fa = devig_three_way(ph, pd, pa)
+                if fh is None or fd is None or fa is None:
+                    continue
 
-            fh, fd, fa = devig_three_way(ph, pd, pa)
-            if fh is None or fd is None or fa is None:
-                continue
+                rows.append({
+                    "book": book.get("title", ""),
+                    "home_fair": fh,
+                    "draw_fair": fd,
+                    "away_fair": fa
+                })
 
-            sharp_rows.append({
-                "book": book.get("title", ""),
-                "home_fair": fh,
-                "draw_fair": fd,
-                "away_fair": fa
-            })
+        if rows:
+            avg_home = sum(r["home_fair"] for r in rows) / len(rows)
+            avg_draw = sum(r["draw_fair"] for r in rows) / len(rows)
+            avg_away = sum(r["away_fair"] for r in rows) / len(rows)
+            return {
+                "fair_home": avg_home,
+                "fair_draw": avg_draw,
+                "fair_away": avg_away,
+                "books": ", ".join(sorted(set(r["book"] for r in rows))),
+                "sharp_only": sharp_only
+            }
 
-    if not sharp_rows:
-        return None
-
-    avg_home = sum(r["home_fair"] for r in sharp_rows) / len(sharp_rows)
-    avg_draw = sum(r["draw_fair"] for r in sharp_rows) / len(sharp_rows)
-    avg_away = sum(r["away_fair"] for r in sharp_rows) / len(sharp_rows)
-
-    return {
-        "fair_home": avg_home,
-        "fair_draw": avg_draw,
-        "fair_away": avg_away,
-        "books": ", ".join(sorted(set(r["book"] for r in sharp_rows)))
-    }
+    return None
 
 
 def best_outlier_two_way(bookmakers, market_key, side_name, point=None):
@@ -318,87 +318,81 @@ def scan_btts():
                 continue
 
             bookmakers = odds.get("bookmakers", [])
+            if not bookmakers:
+                continue
 
-            # ---------------------------
             # BTTS
-            # ---------------------------
-            sharp_btts = choose_sharp_two_way(bookmakers, "btts", "yes", "no")
-            if sharp_btts:
-                for side, fair_prob in [("YES", sharp_btts["fair_a"]), ("NO", sharp_btts["fair_b"])]:
-                    outlier = best_outlier_two_way(bookmakers, "btts", "yes" if side == "YES" else "no")
-                    if not outlier:
-                        continue
+            fair_btts = choose_two_way_fair(bookmakers, "btts", "yes", "no")
+            if fair_btts:
+                for side, fair_prob, side_name in [
+                    ("YES", fair_btts["fair_a"], "yes"),
+                    ("NO", fair_btts["fair_b"], "no"),
+                ]:
+                    outlier = best_outlier_two_way(bookmakers, "btts", side_name)
+                    if outlier:
+                        edge = fair_prob - outlier["implied_prob"]
+                        rows.append({
+                            "match": match_name,
+                            "league": league["label"],
+                            "market": "BTTS",
+                            "side": side,
+                            "kalshi_price": "-",
+                            "true_prob": round(fair_prob * 100, 1),
+                            "book_prob": round(outlier["implied_prob"] * 100, 1),
+                            "edge": round(edge * 100, 1),
+                            "signal": classify_edge(edge),
+                            "books": f"Fair: {fair_btts['books']} | Best: {outlier['book']}",
+                            "notes": f"Best price {outlier['price']}"
+                        })
 
-                    edge = fair_prob - outlier["implied_prob"]
-                    rows.append({
-                        "match": match_name,
-                        "league": league["label"],
-                        "market": "BTTS",
-                        "side": side,
-                        "kalshi_price": "-",
-                        "true_prob": round(fair_prob * 100, 1),
-                        "book_prob": round(outlier["implied_prob"] * 100, 1),
-                        "edge": round(edge * 100, 1),
-                        "signal": classify_edge(edge),
-                        "books": f"Sharp: {sharp_btts['books']} | Best: {outlier['book']}",
-                        "notes": f"Best price {outlier['price']}"
-                    })
+            # Totals 2.5
+            fair_totals = choose_two_way_fair(bookmakers, "totals", "over", "under", point=2.5)
+            if fair_totals:
+                for side, fair_prob, side_name in [
+                    ("OVER", fair_totals["fair_a"], "over"),
+                    ("UNDER", fair_totals["fair_b"], "under"),
+                ]:
+                    outlier = best_outlier_two_way(bookmakers, "totals", side_name, point=2.5)
+                    if outlier:
+                        edge = fair_prob - outlier["implied_prob"]
+                        rows.append({
+                            "match": match_name,
+                            "league": league["label"],
+                            "market": "TOTALS 2.5",
+                            "side": side,
+                            "kalshi_price": "-",
+                            "true_prob": round(fair_prob * 100, 1),
+                            "book_prob": round(outlier["implied_prob"] * 100, 1),
+                            "edge": round(edge * 100, 1),
+                            "signal": classify_edge(edge),
+                            "books": f"Fair: {fair_totals['books']} | Best: {outlier['book']}",
+                            "notes": f"Best price {outlier['price']}"
+                        })
 
-            # ---------------------------
-            # TOTALS 2.5
-            # ---------------------------
-            sharp_totals = choose_sharp_two_way(bookmakers, "totals", "over", "under", point=2.5)
-            if sharp_totals:
-                for side, fair_prob in [("OVER", sharp_totals["fair_a"]), ("UNDER", sharp_totals["fair_b"])]:
-                    outlier = best_outlier_two_way(bookmakers, "totals", "over" if side == "OVER" else "under", point=2.5)
-                    if not outlier:
-                        continue
-
-                    edge = fair_prob - outlier["implied_prob"]
-                    rows.append({
-                        "match": match_name,
-                        "league": league["label"],
-                        "market": "TOTALS 2.5",
-                        "side": side,
-                        "kalshi_price": "-",
-                        "true_prob": round(fair_prob * 100, 1),
-                        "book_prob": round(outlier["implied_prob"] * 100, 1),
-                        "edge": round(edge * 100, 1),
-                        "signal": classify_edge(edge),
-                        "books": f"Sharp: {sharp_totals['books']} | Best: {outlier['book']}",
-                        "notes": f"Best price {outlier['price']}"
-                    })
-
-            # ---------------------------
-            # MONEYLINE
-            # ---------------------------
-            sharp_ml = choose_sharp_three_way(bookmakers, home, away)
-            if sharp_ml:
-                ml_sides = [
-                    ("HOME", home, sharp_ml["fair_home"]),
-                    ("DRAW", "Draw", sharp_ml["fair_draw"]),
-                    ("AWAY", away, sharp_ml["fair_away"])
-                ]
-
-                for side_label, outcome_name, fair_prob in ml_sides:
+            # Moneyline
+            fair_ml = choose_three_way_fair(bookmakers, home, away)
+            if fair_ml:
+                for side_label, outcome_name, fair_prob in [
+                    ("HOME", home, fair_ml["fair_home"]),
+                    ("DRAW", "Draw", fair_ml["fair_draw"]),
+                    ("AWAY", away, fair_ml["fair_away"]),
+                ]:
                     outlier = best_outlier_moneyline(bookmakers, outcome_name)
-                    if not outlier:
-                        continue
-
-                    edge = fair_prob - outlier["implied_prob"]
-                    rows.append({
-                        "match": match_name,
-                        "league": league["label"],
-                        "market": "MONEYLINE",
-                        "side": side_label,
-                        "kalshi_price": "-",
-                        "true_prob": round(fair_prob * 100, 1),
-                        "book_prob": round(outlier["implied_prob"] * 100, 1),
-                        "edge": round(edge * 100, 1),
-                        "signal": classify_edge(edge),
-                        "books": f"Sharp: {sharp_ml['books']} | Best: {outlier['book']}",
-                        "notes": f"Best price {outlier['price']}"
-                    })
+                    if outlier:
+                        edge = fair_prob - outlier["implied_prob"]
+                        rows.append({
+                            "match": match_name,
+                            "league": league["label"],
+                            "market": "MONEYLINE",
+                            "side": side_label,
+                            "kalshi_price": "-",
+                            "true_prob": round(fair_prob * 100, 1),
+                            "book_prob": round(outlier["implied_prob"] * 100, 1),
+                            "edge": round(edge * 100, 1),
+                            "signal": classify_edge(edge),
+                            "books": f"Fair: {fair_ml['books']} | Best: {outlier['book']}",
+                            "notes": f"Best price {outlier['price']}"
+                        })
 
     if not rows:
         return [{
@@ -412,19 +406,11 @@ def scan_btts():
             "edge": "-",
             "signal": "NO DATA",
             "books": "",
-            "notes": ""
+            "notes": "Try fewer leagues or broader books"
         }]
 
-    # keep only best bet per match
     best_by_match = {}
-
-    signal_rank = {
-        "OBVIOUS BET": 4,
-        "BET": 3,
-        "WATCH": 2,
-        "PASS": 1,
-        "NO DATA": 0
-    }
+    signal_rank = {"OBVIOUS BET": 4, "BET": 3, "WATCH": 2, "PASS": 1, "NO DATA": 0}
 
     for row in rows:
         key = row["match"]
@@ -444,9 +430,12 @@ def scan_btts():
             best_by_match[key] = row
 
     final_rows = list(best_by_match.values())
-    final_rows.sort(key=lambda x: (
-        signal_rank.get(x["signal"], 0),
-        x["edge"] if isinstance(x["edge"], (int, float)) else -999
-    ), reverse=True)
+    final_rows.sort(
+        key=lambda x: (
+            signal_rank.get(x["signal"], 0),
+            x["edge"] if isinstance(x["edge"], (int, float)) else -999
+        ),
+        reverse=True
+    )
 
     return final_rows
