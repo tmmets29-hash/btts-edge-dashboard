@@ -2,12 +2,8 @@ import os
 import requests
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
-
-LEAGUES = [
-    {"sport_key": "soccer_usa_mls", "label": "MLS"},
-    {"sport_key": "soccer_epl", "label": "EPL"},
-    {"sport_key": "soccer_germany_bundesliga", "label": "Bundesliga"},
-]
+SPORT_KEY = "soccer_usa_mls"
+LEAGUE_LABEL = "MLS"
 
 
 def odds_to_prob(price):
@@ -20,46 +16,18 @@ def odds_to_prob(price):
         return None
 
 
-def devig_two_way(prob_a, prob_b):
-    total = prob_a + prob_b
+def devig_two_way(a, b):
+    total = a + b
     if total <= 0:
         return None, None
-    return prob_a / total, prob_b / total
+    return a / total, b / total
 
 
-def devig_three_way(prob_a, prob_b, prob_c):
-    total = prob_a + prob_b + prob_c
+def devig_three_way(a, b, c):
+    total = a + b + c
     if total <= 0:
         return None, None, None
-    return prob_a / total, prob_b / total, prob_c / total
-
-
-def get_events_for_league(sport_key):
-    try:
-        url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/events"
-        r = requests.get(url, params={"apiKey": ODDS_API_KEY}, timeout=20)
-        if r.status_code != 200:
-            return []
-        return r.json()
-    except Exception:
-        return []
-
-
-def get_event_odds(sport_key, event_id):
-    try:
-        url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/events/{event_id}/odds"
-        params = {
-            "apiKey": ODDS_API_KEY,
-            "markets": "btts,totals,h2h",
-            "regions": "us,uk,eu",
-            "oddsFormat": "decimal"
-        }
-        r = requests.get(url, params=params, timeout=20)
-        if r.status_code != 200:
-            return None
-        return r.json()
-    except Exception:
-        return None
+    return a / total, b / total, c / total
 
 
 def classify_edge(edge):
@@ -72,7 +40,24 @@ def classify_edge(edge):
     return "PASS"
 
 
-def best_price_for_side(bookmakers, market_key, side_name, point=None):
+def get_league_odds():
+    try:
+        url = f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/odds"
+        params = {
+            "apiKey": ODDS_API_KEY,
+            "regions": "us",
+            "markets": "h2h,totals,btts",
+            "oddsFormat": "decimal",
+        }
+        r = requests.get(url, params=params, timeout=20)
+        if r.status_code != 200:
+            return []
+        return r.json()
+    except Exception:
+        return []
+
+
+def best_price_for_outcome(bookmakers, market_key, outcome_name, point=None):
     best_price = None
     best_book = ""
 
@@ -82,13 +67,12 @@ def best_price_for_side(bookmakers, market_key, side_name, point=None):
                 continue
 
             if point is not None:
-                market_point = market.get("point")
-                if market_point is None or float(market_point) != float(point):
+                if market.get("point") is None or float(market.get("point")) != float(point):
                     continue
 
             for outcome in market.get("outcomes", []):
                 name = str(outcome.get("name", "")).strip().lower()
-                if name != side_name.strip().lower():
+                if name != outcome_name.strip().lower():
                     continue
 
                 price = outcome.get("price")
@@ -113,65 +97,102 @@ def best_price_for_side(bookmakers, market_key, side_name, point=None):
     }
 
 
-def consensus_two_way(bookmakers, market_key, side_a_name, side_b_name, point=None):
-    fair_a_list = []
-    fair_b_list = []
-    books_used = set()
+def consensus_btts(bookmakers):
+    yes_probs = []
+    no_probs = []
 
     for book in bookmakers:
         for market in book.get("markets", []):
-            if market.get("key") != market_key:
+            if market.get("key") != "btts":
                 continue
 
-            if point is not None:
-                market_point = market.get("point")
-                if market_point is None or float(market_point) != float(point):
-                    continue
-
-            a_price = None
-            b_price = None
+            yes_price = None
+            no_price = None
 
             for outcome in market.get("outcomes", []):
                 name = str(outcome.get("name", "")).strip().lower()
                 price = outcome.get("price")
 
-                if name == side_a_name.strip().lower():
-                    a_price = price
-                elif name == side_b_name.strip().lower():
-                    b_price = price
+                if name == "yes":
+                    yes_price = price
+                elif name == "no":
+                    no_price = price
 
-            if a_price is None or b_price is None:
+            if yes_price is None or no_price is None:
                 continue
 
-            pa = odds_to_prob(a_price)
-            pb = odds_to_prob(b_price)
-
-            if pa is None or pb is None:
+            py = odds_to_prob(yes_price)
+            pn = odds_to_prob(no_price)
+            if py is None or pn is None:
                 continue
 
-            fa, fb = devig_two_way(pa, pb)
-            if fa is None or fb is None:
+            fy, fn = devig_two_way(py, pn)
+            if fy is None or fn is None:
                 continue
 
-            fair_a_list.append(fa)
-            fair_b_list.append(fb)
-            books_used.add(book.get("title", ""))
+            yes_probs.append(fy)
+            no_probs.append(fn)
 
-    if not fair_a_list or not fair_b_list:
+    if not yes_probs or not no_probs:
         return None
 
     return {
-        "fair_a": sum(fair_a_list) / len(fair_a_list),
-        "fair_b": sum(fair_b_list) / len(fair_b_list),
-        "books": ", ".join(sorted(books_used))
+        "yes": sum(yes_probs) / len(yes_probs),
+        "no": sum(no_probs) / len(no_probs),
     }
 
 
-def consensus_three_way(bookmakers, home_team, away_team):
-    fair_home_list = []
-    fair_draw_list = []
-    fair_away_list = []
-    books_used = set()
+def consensus_totals_25(bookmakers):
+    over_probs = []
+    under_probs = []
+
+    for book in bookmakers:
+        for market in book.get("markets", []):
+            if market.get("key") != "totals":
+                continue
+            if market.get("point") is None or float(market.get("point")) != 2.5:
+                continue
+
+            over_price = None
+            under_price = None
+
+            for outcome in market.get("outcomes", []):
+                name = str(outcome.get("name", "")).strip().lower()
+                price = outcome.get("price")
+
+                if name == "over":
+                    over_price = price
+                elif name == "under":
+                    under_price = price
+
+            if over_price is None or under_price is None:
+                continue
+
+            po = odds_to_prob(over_price)
+            pu = odds_to_prob(under_price)
+            if po is None or pu is None:
+                continue
+
+            fo, fu = devig_two_way(po, pu)
+            if fo is None or fu is None:
+                continue
+
+            over_probs.append(fo)
+            under_probs.append(fu)
+
+    if not over_probs or not under_probs:
+        return None
+
+    return {
+        "over": sum(over_probs) / len(over_probs),
+        "under": sum(under_probs) / len(under_probs),
+    }
+
+
+def consensus_moneyline(bookmakers, home_team, away_team):
+    home_probs = []
+    draw_probs = []
+    away_probs = []
 
     for book in bookmakers:
         for market in book.get("markets", []):
@@ -199,7 +220,6 @@ def consensus_three_way(bookmakers, home_team, away_team):
             ph = odds_to_prob(home_price)
             pd = odds_to_prob(draw_price)
             pa = odds_to_prob(away_price)
-
             if ph is None or pd is None or pa is None:
                 continue
 
@@ -207,40 +227,38 @@ def consensus_three_way(bookmakers, home_team, away_team):
             if fh is None or fd is None or fa is None:
                 continue
 
-            fair_home_list.append(fh)
-            fair_draw_list.append(fd)
-            fair_away_list.append(fa)
-            books_used.add(book.get("title", ""))
+            home_probs.append(fh)
+            draw_probs.append(fd)
+            away_probs.append(fa)
 
-    if not fair_home_list:
+    if not home_probs:
         return None
 
     return {
-        "fair_home": sum(fair_home_list) / len(fair_home_list),
-        "fair_draw": sum(fair_draw_list) / len(fair_draw_list),
-        "fair_away": sum(fair_away_list) / len(fair_away_list),
-        "books": ", ".join(sorted(books_used))
+        "home": sum(home_probs) / len(home_probs),
+        "draw": sum(draw_probs) / len(draw_probs),
+        "away": sum(away_probs) / len(away_probs),
     }
 
 
-def add_candidate(rows, match_name, league_label, market, side, fair_prob, outlier):
-    if fair_prob is None or outlier is None:
+def add_candidate(rows, match_name, market, side, fair_prob, best):
+    if fair_prob is None or best is None:
         return
 
-    edge = fair_prob - outlier["implied_prob"]
+    edge = fair_prob - best["implied_prob"]
 
     rows.append({
         "match": match_name,
-        "league": league_label,
+        "league": LEAGUE_LABEL,
         "market": market,
         "side": side,
         "kalshi_price": "-",
         "true_prob": round(fair_prob * 100, 1),
-        "book_prob": round(outlier["implied_prob"] * 100, 1),
+        "book_prob": round(best["implied_prob"] * 100, 1),
         "edge": round(edge * 100, 1),
         "signal": classify_edge(edge),
-        "books": f"Consensus vs {outlier['book']}",
-        "notes": f"Best price {outlier['price']}"
+        "books": best["book"],
+        "notes": f"Best price {best['price']}"
     })
 
 
@@ -260,75 +278,38 @@ def scan_btts():
             "notes": ""
         }]
 
+    events = get_league_odds()
     rows = []
 
-    for league in LEAGUES:
-        events = get_events_for_league(league["sport_key"])
+    for event in events:
+        home = event.get("home_team", "")
+        away = event.get("away_team", "")
+        match_name = f"{home} vs {away}"
+        bookmakers = event.get("bookmakers", [])
 
-        for event in events:
-            home = event.get("home_team", "")
-            away = event.get("away_team", "")
-            match_name = f"{home} vs {away}"
+        if not bookmakers:
+            continue
 
-            odds = get_event_odds(league["sport_key"], event.get("id"))
-            if not odds:
-                continue
+        btts = consensus_btts(bookmakers)
+        if btts:
+            add_candidate(rows, match_name, "BTTS", "YES", btts["yes"], best_price_for_outcome(bookmakers, "btts", "yes"))
+            add_candidate(rows, match_name, "BTTS", "NO", btts["no"], best_price_for_outcome(bookmakers, "btts", "no"))
 
-            bookmakers = odds.get("bookmakers", [])
-            if not bookmakers:
-                continue
+        totals = consensus_totals_25(bookmakers)
+        if totals:
+            add_candidate(rows, match_name, "TOTALS 2.5", "OVER", totals["over"], best_price_for_outcome(bookmakers, "totals", "over", point=2.5))
+            add_candidate(rows, match_name, "TOTALS 2.5", "UNDER", totals["under"], best_price_for_outcome(bookmakers, "totals", "under", point=2.5))
 
-            # BTTS
-            fair_btts = consensus_two_way(bookmakers, "btts", "yes", "no")
-            if fair_btts:
-                add_candidate(
-                    rows, match_name, league["label"], "BTTS", "YES",
-                    fair_btts["fair_a"],
-                    best_price_for_side(bookmakers, "btts", "yes")
-                )
-                add_candidate(
-                    rows, match_name, league["label"], "BTTS", "NO",
-                    fair_btts["fair_b"],
-                    best_price_for_side(bookmakers, "btts", "no")
-                )
-
-            # Totals 2.5
-            fair_totals = consensus_two_way(bookmakers, "totals", "over", "under", point=2.5)
-            if fair_totals:
-                add_candidate(
-                    rows, match_name, league["label"], "TOTALS 2.5", "OVER",
-                    fair_totals["fair_a"],
-                    best_price_for_side(bookmakers, "totals", "over", point=2.5)
-                )
-                add_candidate(
-                    rows, match_name, league["label"], "TOTALS 2.5", "UNDER",
-                    fair_totals["fair_b"],
-                    best_price_for_side(bookmakers, "totals", "under", point=2.5)
-                )
-
-            # Moneyline
-            fair_ml = consensus_three_way(bookmakers, home, away)
-            if fair_ml:
-                add_candidate(
-                    rows, match_name, league["label"], "MONEYLINE", "HOME",
-                    fair_ml["fair_home"],
-                    best_price_for_side(bookmakers, "h2h", home)
-                )
-                add_candidate(
-                    rows, match_name, league["label"], "MONEYLINE", "DRAW",
-                    fair_ml["fair_draw"],
-                    best_price_for_side(bookmakers, "h2h", "draw")
-                )
-                add_candidate(
-                    rows, match_name, league["label"], "MONEYLINE", "AWAY",
-                    fair_ml["fair_away"],
-                    best_price_for_side(bookmakers, "h2h", away)
-                )
+        ml = consensus_moneyline(bookmakers, home, away)
+        if ml:
+            add_candidate(rows, match_name, "MONEYLINE", "HOME", ml["home"], best_price_for_outcome(bookmakers, "h2h", home))
+            add_candidate(rows, match_name, "MONEYLINE", "DRAW", ml["draw"], best_price_for_outcome(bookmakers, "h2h", "draw"))
+            add_candidate(rows, match_name, "MONEYLINE", "AWAY", ml["away"], best_price_for_outcome(bookmakers, "h2h", away))
 
     if not rows:
         return [{
-            "match": "No usable markets found",
-            "league": "-",
+            "match": "No usable MLS markets found",
+            "league": LEAGUE_LABEL,
             "market": "-",
             "side": "-",
             "kalshi_price": "-",
@@ -337,37 +318,31 @@ def scan_btts():
             "edge": "-",
             "signal": "NO DATA",
             "books": "",
-            "notes": "Free-tier fallback found nothing"
+            "notes": ""
         }]
 
-    # only best bet per match
+    # Best bet per match
+    rank = {"BET": 3, "WATCH": 2, "PASS": 1, "NO DATA": 0}
     best_by_match = {}
-    signal_rank = {"BET": 3, "WATCH": 2, "PASS": 1, "NO DATA": 0}
 
     for row in rows:
         key = row["match"]
         current = best_by_match.get(key)
 
-        row_rank = signal_rank.get(row["signal"], 0)
-        row_edge = row["edge"] if isinstance(row["edge"], (int, float)) else -999
-
         if current is None:
             best_by_match[key] = row
             continue
 
-        current_rank = signal_rank.get(current["signal"], 0)
-        current_edge = current["edge"] if isinstance(current["edge"], (int, float)) else -999
+        row_rank = rank.get(row["signal"], 0)
+        cur_rank = rank.get(current["signal"], 0)
 
-        if row_rank > current_rank or (row_rank == current_rank and row_edge > current_edge):
+        row_edge = row["edge"] if isinstance(row["edge"], (int, float)) else -999
+        cur_edge = current["edge"] if isinstance(current["edge"], (int, float)) else -999
+
+        if row_rank > cur_rank or (row_rank == cur_rank and row_edge > cur_edge):
             best_by_match[key] = row
 
     final_rows = list(best_by_match.values())
-    final_rows.sort(
-        key=lambda x: (
-            signal_rank.get(x["signal"], 0),
-            x["edge"] if isinstance(x["edge"], (int, float)) else -999
-        ),
-        reverse=True
-    )
+    final_rows.sort(key=lambda x: (rank.get(x["signal"], 0), x["edge"] if isinstance(x["edge"], (int, float)) else -999), reverse=True)
 
     return final_rows
