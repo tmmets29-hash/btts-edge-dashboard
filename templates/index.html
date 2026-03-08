@@ -1,137 +1,177 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BTTS Edge Radar</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BTTS Edge Radar</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #07133a;
+      color: white;
+      padding: 20px;
+      margin: 0;
+    }
 
-<style>
-body{
-font-family:system-ui,-apple-system,sans-serif;
-background:#07133a;
-color:white;
-padding:20px;
-margin:0;
-}
+    h1 {
+      margin-top: 40px;
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 10px;
+    }
 
-h1{
-margin-top:40px;
-font-size:32px;
-}
+    .subtitle {
+      font-size: 18px;
+      opacity: 0.8;
+      margin-bottom: 20px;
+    }
 
-button{
-background:#2f6df6;
-color:white;
-border:none;
-border-radius:14px;
-padding:18px 24px;
-font-size:18px;
-margin:20px 0;
-}
+    button {
+      background: #3b6df6;
+      color: white;
+      border: none;
+      border-radius: 18px;
+      padding: 20px 28px;
+      font-size: 24px;
+      font-weight: 600;
+      margin: 24px 0;
+      width: 320px;
+      max-width: 100%;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+    }
 
-.card{
-background:#11204f;
-border-radius:14px;
-padding:16px;
-margin-bottom:12px;
-}
+    #status {
+      margin: 10px 0 20px 0;
+      font-size: 16px;
+      opacity: 0.9;
+    }
 
-.bet{background:#0f5132;}
-.pass{background:#3a1d1d;}
-.review{background:#4b3a12;}
-.nodata{background:#4a1f1f;}
-</style>
+    .card {
+      background: #1a234f;
+      border-radius: 20px;
+      padding: 22px;
+      margin-bottom: 18px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
 
+    .bet {
+      background: #133d2a;
+      border: 2px solid #2bd97f;
+    }
+
+    .pass {
+      background: #3b1d22;
+      border: 2px solid #6b2a35;
+    }
+
+    .review {
+      background: #4b3a12;
+      border: 2px solid #c9a227;
+    }
+
+    .nodata {
+      background: #3b1d22;
+      border: 2px solid #6b2a35;
+    }
+
+    .match {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .betline {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 14px;
+      color: #c7d7ff;
+    }
+
+    .meta {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .notes {
+      font-size: 16px;
+      opacity: 0.9;
+      margin-bottom: 10px;
+    }
+
+    .footer {
+      font-size: 15px;
+      opacity: 0.75;
+    }
+  </style>
 </head>
-
 <body>
+  <h1>BTTS Edge Radar</h1>
+  <div class="subtitle">Best MLS betting spots from sportsbook fair odds</div>
 
-<h1>BTTS Edge Radar</h1>
+  <button id="scanButton">Refresh Scan</button>
 
-<button onclick="scan()">Refresh Scan</button>
+  <div id="status">Tap refresh to scan.</div>
+  <div id="results"></div>
 
-<div id="status">Tap refresh to scan.</div>
-<div id="results"></div>
+  <script>
+    async function scan() {
+      const status = document.getElementById("status");
+      const results = document.getElementById("results");
 
-<script>
+      status.textContent = "Scanning...";
+      results.innerHTML = "";
 
-async function scan(){
+      try {
+        const res = await fetch("/scan");
 
-const status=document.getElementById("status");
-const results=document.getElementById("results");
+        if (!res.ok) {
+          status.textContent = "Error: /scan returned " + res.status;
+          return;
+        }
 
-status.textContent="Scanning...";
-results.innerHTML="";
+        const data = await res.json();
 
-try{
+        if (!Array.isArray(data)) {
+          status.textContent = "Error: /scan did not return a list.";
+          results.innerHTML = "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
+          return;
+        }
 
-const res=await fetch("/scan");
+        if (data.length === 0) {
+          status.textContent = "Scan worked, but no results came back.";
+          return;
+        }
 
-if(!res.ok){
-status.textContent="Error "+res.status;
-return;
-}
+        status.textContent = "Found " + data.length + " results.";
 
-const data=await res.json();
+        data.forEach(item => {
+          const card = document.createElement("div");
+          const sig = (item.signal || "").toUpperCase();
 
-if(data.length===0){
-status.textContent="Scan worked but no matches returned.";
-return;
-}
+          let cls = "card pass";
+          if (sig === "BET") cls = "card bet";
+          if (sig === "REVIEW") cls = "card review";
+          if (sig === "NO DATA" || sig === "NO BTTS" || sig === "ERROR" || sig === "CHECK ENV") cls = "card nodata";
 
-status.textContent="Found "+data.length+" results.";
+          card.className = cls;
 
-data.forEach(item=>{
+          card.innerHTML = `
+            <div class="match">${item.match ?? "Unknown match"}</div>
+            <div class="betline">Bet: ${item.market ?? "-"} ${item.side ?? ""}</div>
+            <div class="meta">True Prob: <strong>${item.true_prob ?? "-"}</strong>${item.true_prob !== "-" ? "%" : ""}</div>
+            <div class="meta">Book: ${item.books ?? "-"}</div>
+            <div class="notes">${item.notes ?? ""}</div>
+            <div class="footer">Kalshi Price: ${item.kalshi_price ?? "-"} | Edge: ${item.edge ?? "-"} | Signal: ${item.signal ?? "-"}</div>
+          `;
 
-const card=document.createElement("div");
+          results.appendChild(card);
+        });
+      } catch (err) {
+        status.textContent = "JS / network error: " + err;
+      }
+    }
 
-let cls="card pass";
-
-if(item.signal==="BET")cls="card bet";
-if(item.signal==="REVIEW")cls="card review";
-if(item.signal==="NO DATA")cls="card nodata";
-
-card.className=cls;
-
-card.innerHTML = `
-  <div style="font-size:26px; font-weight:700; margin-bottom:10px;">
-    ${item.match ?? "Unknown match"}
-  </div>
-
-  <div style="font-size:22px; font-weight:600; margin-bottom:14px; color:#c7d7ff;">
-    Bet: ${item.market ?? "-"} ${item.side ?? ""}
-  </div>
-
-  <div style="font-size:18px; margin-bottom:8px;">
-    True Prob: <strong>${item.true_prob ?? "-"}</strong>${item.true_prob !== "-" ? "%" : ""}
-  </div>
-
-  <div style="font-size:18px; margin-bottom:8px;">
-    Book: ${item.books ?? "-"}
-  </div>
-
-  <div style="font-size:16px; opacity:0.9; margin-bottom:10px;">
-    ${item.notes ?? ""}
-  </div>
-
-  <div style="font-size:15px; opacity:0.75;">
-    Kalshi Price: ${item.kalshi_price ?? "-"} | Edge: ${item.edge ?? "-"} | Signal: ${item.signal ?? "-"}
-  </div>
-`;
-`;
-
-results.appendChild(card);
-
-});
-
-}
-
-catch(err){
-status.textContent="Network error "+err;
-}
-
-}
-
-</script>
-
+    document.getElementById("scanButton").addEventListener("click", scan);
+  </script>
 </body>
 </html>
